@@ -1,0 +1,50 @@
+name: Angular CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+
+    runs-on: self-hosted
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Docker Login
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login \
+          -u "${{ secrets.vinbond }}" \
+          --password-stdin
+
+      - name: Build Docker Image
+        run: |
+          docker build -t ${{ secrets.vinbond }}/angular-demo:${{ github.sha }} .
+
+      - name: Push Docker Image
+        run: |
+          docker push ${{ secrets.vinbond }}/angular-demo:${{ github.sha }}
+
+      - name: Configure Kubernetes
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Deploy using Helm
+        run: |
+          helm upgrade --install angular-release ./helm/angular-app \
+            --set image.repository=${{ secrets.vinbond }}/angular-demo \
+            --set image.tag=${{ github.sha }}
+
+      - name: Verify Deployment
+        run: |
+          kubectl rollout status deployment/angular-app
+          kubectl get pods
+          kubectl get services
